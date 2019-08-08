@@ -25,7 +25,6 @@
                                         (vec (keep-indexed #(if (= chosen-index %) nil %2) needy-players))
                                         (update needy-players chosen-index #(list (first %) (inc (second %)))))))))))
 
-
 ;;not idempotent
 (defn move-card [card from to]
   (do (swap! player-cards
@@ -37,7 +36,7 @@
                                   (if (>= pos (count cards))
                                     (throw (Exception. "card not found"))
                                     (if (= (cards pos) card)
-                                      (concat (take pos cards) (take-last (- (count cards) pos 1) cards))
+                                      (vec (concat (take pos cards) (take-last (- (count cards) pos 1) cards)))
                                       (recur (inc pos)))))]
                      to [to (conj cards card)]
                      [player cards])) player-cards))))
@@ -49,8 +48,21 @@
                                             (vec (concat (take pos players) (list to) (take-last (- (count players) pos 1) players)))
                                             (recur (inc pos)))))))))
 
-;no use?
 
+(defn human-pass [])
+
+;not based on >1 decks
+(defn rand-pass [numplayers]
+  (let [player-cards @player-cards]
+    (doseq [player (rest player-cards)]
+      (pr "from" (first player))
+      (let [to (nth (remove #(= (first player) %) (range 1 (inc numplayers))) (rand-int (dec numplayers)))] (pr "to" to)
+        (loop [cards (second player) passes 0]
+          (let [card (nth cards (rand-int (count cards)))] (pr "card" card)
+            (move-card card (first player) to)
+            (if (> passes 1) nil
+              (recur (remove #(= card %) cards) (inc passes)))))
+        (prn)))))
 
 (defn -main
   [& args]
@@ -58,8 +70,3 @@
                (do (println "What is your name?") (read-line))
                (first args))]
     (println (str "hi " name))))
-
-; (defn notuseful "returns player and, if present, the nth of card" [card]
-;   (reduce (fn [[player cards]]
-;             (if-let [found (reduce #(if (= card %2) (reduced [true (second %)]) [false (inc (second %))]) [false 0] cards)]
-;               (reduced [player found]) [(inc (% 0))])) [0] player-cards))
