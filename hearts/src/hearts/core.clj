@@ -2,9 +2,12 @@
 
 (def player-cards "player key assoc with cards (dealer is 0) {0 [51 23 42 46 8] 1 [1 7 45 33]}"
   (atom ^clojure.lang.PersistentArrayMap {}))
-
 (def card-players "card key assoc with player/dealer (length of vector indicates # of decks) {0 [0 1] 1 [1 4]}"
   (atom ^clojure.lang.PersistentArrayMap {}))
+(def player-suits-broken "player key" (atom {}))
+(def suit-players-broken "card-key" (atom {}))
+(def last-winner (atom -1))
+(def points (atom {}))
 
 (defn deal [numplayers] "todo: expand beyond 1 deck, 4 players"
   (loop [players (apply hash-map (interleave (range (inc numplayers)) (repeat [])))
@@ -23,13 +26,19 @@
                (rest loose-cards)
                (do (prn needy-players)(prn loose-cards)(if (> chosen-count 11)
                                         (vec (keep-indexed #(if (= chosen-index %) nil %2) needy-players))
-                                        (update needy-players chosen-index #(list (first %) (inc (second %)))))))))))
+                                        (update needy-players chosen-index #(list (first %) (inc (second %))))))))))
+  (reset! player-suits-broken (apply hash-map (interleave (range 1 (inc numplayers)) (repeat #{}))))
+  (reset! suit-players-broken (apply hash-map (interleave (range 1 5) (repeat #{}))))
+  (reset! points (apply hash-map (interleave (range 1 (inc numplayers)) (repeat 0))))
+  (reset! last-winner -1))
 
 ;;not idempotent
 (defn move-card [card from to]
-  (do (swap! player-cards
-        (fn [player-cards]
-          (into {}
+  (prn "from" from "to" to "card" card)
+  (when (= from to) (throw (Exception. "a playing is passing to itself")))
+  (swap! player-cards
+    (fn [player-cards]
+      (into {}
             (map (fn [[player cards]]
                    (condp = player
                      from [from (loop [pos 0]
@@ -38,31 +47,55 @@
                                     (if (= (cards pos) card)
                                       (vec (concat (take pos cards) (take-last (- (count cards) pos 1) cards)))
                                       (recur (inc pos)))))]
-                     to [to (conj cards card)]
+                     to [to (conj cards card)] ;doesn't have to be a number for the dealer (primary memory should go elsewhere to provide more information) ;yes it does
                      [player cards])) player-cards))))
-    (swap! card-players update card (fn [players]
-                                      (loop [pos 0]
-                                        (if (>= pos (count players))
-                                          (throw (Exception. "player not found"))
-                                          (if (= (players pos) from)
-                                            (vec (concat (take pos players) (list to) (take-last (- (count players) pos 1) players)))
-                                            (recur (inc pos)))))))))
+  (swap! card-players update card (fn [players]
+                                    (loop [pos 0]
+                                      (if (>= pos (count players))
+                                        (throw (Exception. "player not found"))
+                                        (if (= (players pos) from)
+                                          (vec (concat (take pos players) (list to) (take-last (- (count players) pos 1) players)))
+                                          (recur (inc pos))))))))
 
+(defn track-broken [suit card from to] ;suits = 1 2 3 4 ;also need to know about suits played and not broken, as well as high cards played
+  (if (and (< card (* suit 13)) (>= card (* (dec suit) 13)))
+       nil
+       (do (swap! player-suits-broken update from #(conj % suit))
+         (swap! suit-players-broken update suit #(conj % from))))
+  (move-card card from to))
 
-(defn human-pass [])
+(defn human-pass [human-player target-player]
+  (prn (str "Player " human-player ", what card of yours will you pass to player " target-player "?\n" "Your cards: " (@player-cards human-player)))
+  (read-line))
 
-;not based on >1 decks
+;not based on >1 decks (yes it is b/c new decks will start at 52, all cards will have an unique #, test for = with mod 52) ;no, bad for the card-players map
+;fixed
 (defn rand-pass [numplayers]
-  (let [player-cards @player-cards]
-    (doseq [player (rest player-cards)]
-      (pr "from" (first player))
-      (let [to (nth (remove #(= (first player) %) (range 1 (inc numplayers))) (rand-int (dec numplayers)))] (pr "to" to)
-        (loop [cards (second player) passes 0]
-          (let [card (nth cards (rand-int (count cards)))] (pr "card" card)
-            (move-card card (first player) to)
-            (if (> passes 1) nil
-              (recur (remove #(= card %) cards) (inc passes)))))
-        (prn)))))
+  (doseq [player (rest @player-cards)] ;could make room for humans here
+    (pr "from" (first player))
+    (let [to (nth (remove #(= (first player) %) (range 1 (inc numplayers))) (rand-int (dec numplayers)))] (pr "to" to)
+      (loop [cards (second player) passes 0]
+        (let [card-pos (rand-int (count cards))
+              card (nth cards card-pos)] (pr "card" card)
+          (move-card card (first player) to)
+          (if (> passes 1) nil
+            (recur (keep-indexed #(if (= card-pos %) nil %2) cards) (inc passes)))))
+      (prn))))
+
+(def play1-winner (atom [-1 -1]))
+
+(defn all-play1-round1 []
+  (doseq [player-cards (let [first-player (rand-nth (@card-players 0))]
+                         (concat (take-last (- (count @player-cards) first-player) @player-cards)
+                                 (rest (take first-player @player-cards))))]
+    (prn player-cards)
+    (track-broken 1
+      (let [card (or (if (empty? (filter #(= (first player-cards) %) (@card-players 0))) nil 0)
+                     (let [clubs (filter #(< % 13) (second player-cards))] (if (empty? clubs) nil (rand-nth clubs)))
+                     (let [nonpoint (filter #(or (< % 37) (= % 38)) (second player-cards))] (if (empty? nonpoint) nil (rand-nth nonpoint)))
+                     (throw (Exception. "player has no card to play in the first round")))]
+        (if (and (< card 13) (> card (second @play1-winner))) (reset! play1-winner [(first player-cards) card])) card)
+      (first player-cards) 0)))
 
 (defn -main
   [& args]
