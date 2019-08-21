@@ -1,17 +1,20 @@
 (ns hearts.core)
 
-(def player-cards "player pos assoc with cards in sorted-map (dealer is 0) [{0 8 1 15 2 42 3 46 4 51} {0 1 1 7 2 33 3 43}]"
+(def player-cards "player/dealer pos assoc with cards in sorted-set (dealer is 0) [#{8 15 42 46 51} #{1 7 33 43}]"
   (atom []))
-(def card-players "card pos assoc with player/dealer in list (length of vector indicates # of decks) ['(0 1) '(0 4)]"
+(def card-players "card pos assoc with player/dealer in list (length of vector indicates # of decks) ['(0 1) '(2 4)]"
   (atom []))
-(def player-suits-broken "player pos then suit pos (y/n for that suit) [[n n n n] [n y y n]]" (atom []))
-(def suit-players-broken "suit pos then player pos [[n n n n] [n y y n]]" (atom []))
+(def player-suits-broken "player pos then suit pos (y/n=1/0 for that suit) [[1 1 1 1] [0 1 1 0]]" (atom []))
+(def suit-players-broken "suit pos then player pos (y/n = 1/0) [[0 0 0 0] [0 1 1 0]]" (atom []))
 (def curr-winner (atom [-1 -1]))
-(def game-points "hand pos then player pos ([13 4 0 9] [0 13 13 0])" (atom '())) ;could save points of every hand
-(def hand-points "player pos" (atom []))
+(def game-points "hand pos (most recent to oldest) then player pos '([13 4 0 9] [0 13 13 0])" (atom '())) ;could save points of every hand
+(def hand-points "player pos [0 0 0 1]" (atom []))
+(def round-history "most recent hand first, most recent round first, sorted maps ordered by play, key is player, val is card '('({1 6 2 8 3 51 0 12}))" (atom '()))
+(def player-history "no purpose yet, doesn't have play order, just ordered by player then by round [[9 22] [5 16] [12 47] [0 13]]")
+(def human? "player pos y/n [0 0 0 1]" (atom []))
 
 (defn deal [numplayers] "todo: expand beyond 1 deck, 4 players"
-  (loop [players (vec (take (inc numplayers) (repeat {})))
+  (loop [players (vec (take (inc numplayers) (repeat (sorted-map))))
          cards (vec (take 52 (repeat '())))
          loose-cards (range 52)
          needy-players (vec (partition 2 (interleave (range 1 (inc numplayers)) (repeat 0))))]
@@ -28,59 +31,26 @@
                (do (prn needy-players)(prn loose-cards)(if (> chosen-count 11)
                                         (vec (keep-indexed #(if (= chosen-index %) nil %2) needy-players))
                                         (update needy-players chosen-index #(list (first %) (inc (second %))))))))))
-  (reset! player-suits-broken (apply hash-map (interleave (range 1 (inc numplayers)) (repeat #{}))))
-  (reset! suit-players-broken (apply hash-map (interleave (range 1 5) (repeat #{}))))
-  (reset! hand-points (apply hash-map (interleave (range 1 (inc numplayers)) (repeat 0))))
+  (reset! player-suits-broken (vec (take numplayers (repeat [0 0 0 0]))))
+  (reset! suit-players-broken (vec (take numplayers (repeat [0 0 0 0]))))
+  (reset! hand-points [0 0 0 0])
+  (swap! game-points conj [0 0 0 0]) ;needs to be reset before a game
   (reset! curr-winner [-1 -1]))
 
 (defn move-card [card from to]
   (prn "from" from "to" to "card" card)
   (when (= from to) (throw (Exception. "a player is passing to itself")))
   (swap! player-cards
-         update from (fn [x] (dissoc x (let [pos (reduce-kv #(if (= %3 card) (reduced %2) %) -1 x)]
-                                         (if (= -1 pos) (throw (Exception. "card not found")) pos))))
+         (fn [y] (let [z (update y from (fn [x] (dissoc x (let [pos (reduce-kv #(if (= %3 card) (reduced %2) %) -1 x)]
+                                                            (if (= -1 pos) (throw (Exception. "card not found")) pos)))))]
+                   (update z to assoc (count (z to)) card))))
+  (swap! card-players update card #(concat (list to) (rest (filter #{from} %)) (remove #{from} %))))
 
-
-
-
-
-         #(let [pos (java.util.Collections/binarySearch % card compare)]
-                        (if (< pos 0) (throw (Exception. "card not found"))
-                          (vec (concat (take pos %) (take-last (- (count %) pos 1) %)))))
-
-
-
-         #(loop [pos 0]
-                        (if (>= pos (count %))
-                          (throw (Exception. "card not found"))
-                          (if (= (% pos) card)
-                            (vec (concat (take pos %) (take-last (- (count %) pos 1) %)))
-                            (recur (inc pos)))))
-
-    (fn [player-cards]
-      (map (fn [[player cards]]
-             (condp = player
-               from [from (loop [pos 0]
-                            (if (>= pos (count cards))
-                              (throw (Exception. "card not found"))
-                              (if (= (cards pos) card)
-                                (vec (concat (take pos cards) (take-last (- (count cards) pos 1) cards)))
-                                (recur (inc pos)))))]
-               to [to (conj cards card)] ;doesn't have to be a number for the dealer (primary memory should go elsewhere to provide more information) ;yes it does
-               [player cards])) player-cards)))
-  (swap! card-players update card (fn [players]
-                                    (loop [pos 0]
-                                      (if (>= pos (count players))
-                                        (throw (Exception. "player not found"))
-                                        (if (= (players pos) from)
-                                          (vec (concat (take pos players) (list to) (take-last (- (count players) pos 1) players)))
-                                          (recur (inc pos))))))))
-
-(defn track-broken [suit card from to] ;suits = 1 2 3 4 ;also need to know about suits played and not broken, as well as high cards played
-  (if (and (< card (* suit 13)) (>= card (* (dec suit) 13)))
+(defn track-broken [suit card from to] ;suits = 0 1 2 3 ;also need to know about suits played and not broken, as well as high cards played
+  (if (= suit (int (/ card 13)))
        nil
-       (do (swap! player-suits-broken update from #(conj % suit))
-         (swap! suit-players-broken update suit #(conj % from))))
+       (do (swap! player-suits-broken update from update suit (fn [x] 1))
+         (swap! suit-players-broken update suit update player (fn [x] 1))))
   (move-card card from to))
 
 (defn human-pass [human-player target-player]
@@ -99,6 +69,8 @@
           (if (> passes 1) nil
             (recur (keep-indexed #(if (= card-pos %) nil %2) cards) (inc passes)))))
       (prn))))
+
+(defn pass [] (dotimes [x (count @human?)] (let )))
 
 (defn all-play1-round1 []
   (doseq [player-cards (let [first-player (rand-nth (@card-players 0))]
