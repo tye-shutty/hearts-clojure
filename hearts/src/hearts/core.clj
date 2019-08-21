@@ -1,18 +1,18 @@
 (ns hearts.core)
 
-(def player-cards "player pos assoc with cards (dealer is 0) [{0 51 1 23 2 42 3 46 4 8} {0 1 1 7 2 45 3 33}]"
+(def player-cards "player pos assoc with cards in sorted-map (dealer is 0) [{0 8 1 15 2 42 3 46 4 51} {0 1 1 7 2 33 3 43}]"
   (atom []))
-(def card-players "card pos assoc with player/dealer (length of vector indicates # of decks) [[0 1] [1 4]]"
+(def card-players "card pos assoc with player/dealer in list (length of vector indicates # of decks) ['(0 1) '(0 4)]"
   (atom []))
-(def player-suits-broken "player key" (atom {}))
-(def suit-players-broken "card-key" (atom {}))
+(def player-suits-broken "player pos then suit pos (y/n for that suit) [[n n n n] [n y y n]]" (atom []))
+(def suit-players-broken "suit pos then player pos [[n n n n] [n y y n]]" (atom []))
 (def curr-winner (atom [-1 -1]))
-(def game-points "player key" (atom {})) ;could save points of every hand
-(def hand-points "player key" (atom {}))
+(def game-points "hand pos then player pos ([13 4 0 9] [0 13 13 0])" (atom '())) ;could save points of every hand
+(def hand-points "player pos" (atom []))
 
 (defn deal [numplayers] "todo: expand beyond 1 deck, 4 players"
-  (loop [players (vec (take (inc numplayers) (repeat [])))
-         cards (vec (take 52 (repeat [])))
+  (loop [players (vec (take (inc numplayers) (repeat {})))
+         cards (vec (take 52 (repeat '())))
          loose-cards (range 52)
          needy-players (vec (partition 2 (interleave (range 1 (inc numplayers)) (repeat 0))))]
     (if (< (count loose-cards) 1)
@@ -22,7 +22,7 @@
           (reset! card-players cards)))
       (let [chosen-index (rand-int (count needy-players))
             [chosen chosen-count] (needy-players chosen-index)]
-        (recur (update players chosen conj (first loose-cards))
+        (recur (update players chosen assoc (count (players chosen)) (first loose-cards))
                (update cards (first loose-cards) conj chosen)
                (rest loose-cards)
                (do (prn needy-players)(prn loose-cards)(if (> chosen-count 11)
@@ -37,7 +37,14 @@
   (prn "from" from "to" to "card" card)
   (when (= from to) (throw (Exception. "a player is passing to itself")))
   (swap! player-cards
-         update from #(let [pos (java.util.Collections/binarySearch % card compare)]
+         update from (fn [x] (dissoc x (let [pos (reduce-kv #(if (= %3 card) (reduced %2) %) -1 x)]
+                                         (if (= -1 pos) (throw (Exception. "card not found")) pos))))
+
+
+
+
+
+         #(let [pos (java.util.Collections/binarySearch % card compare)]
                         (if (< pos 0) (throw (Exception. "card not found"))
                           (vec (concat (take pos %) (take-last (- (count %) pos 1) %)))))
 
