@@ -1,6 +1,6 @@
 (ns hearts.core)
 
-(def player-cards "player/dealer pos assoc with cards in sorted-set (dealer is 0) [#{8 15 42 46 51} #{1 7 33 43}]"
+(def player-cards "player/dealer pos assoc with cards in sorted-map (dealer is 0) [{0 8 1 15 2 42 3 46 4 51} {0 1 1 7 2 33 3 43}]"
   (atom []))
 (def card-players "card pos assoc with player/dealer in list (length of vector indicates # of decks) ['(0 1) '(2 4)]"
   (atom []))
