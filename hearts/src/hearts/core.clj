@@ -131,31 +131,44 @@
 
 (defn all-play-another-round [])
 
-(defn play_hand []
+(defn play-first-round []
   (deal)
   (pass)
-   ;; outer loop info for all players, inner loop for each player
-  (loop [first-player (let [fp (@card-players 0)] (track-card-pass 0 0 fp 0) fp); suit card from to
+   ;; loop for each player
+  (loop [curr-player (let [fp (@card-players 0)] (track-card-pass 0 0 fp 0) fp)
          suit 0
-         win-card 0 ; 0:12
-         broken 0 ; 0==false 1==true
+         winning-card 0 ; 0:12
+         broken -1 ; 0==false 1==true -1==first round
          player-cards2 (mapv sort @player-cards)
          player-suits (mapv (fn [hand] (reduce #(update %1 (int (/ %2 13)) inc)
-                                          [0 0 0 0] hand))
+                                               [0 0 0 0] hand))
                             player-cards2)
-         suits-known (mapv + (player-suits 0) (player-suits first-player))
-         card-suit-rarity (mapv (fn [hand] (mapv (fn [card] ; makes low cards in suits that have been played/dealt more valuable ;in future can split into hand(player) and played(dealer) weights
-                                                   (Math/abs (nth (iterate (fn [x] (if (= x 1) -2 (- x 1)))
-                                                                           (+ 1 (int (mod card 13))))
-                                                                  (suits-known (int (/ card 13)))))) ; times to iterate
+         suits-known (mapv #(mapv + % (player-suits 0)) player-suits)
+         ; makes low cards in suits that have been played/dealt more valuable ;in future can split into hand(player) and played(dealer) weights
+         ; doesn't work so good
+         card-suit-rarity (keep-indexed (fn [i hand]
+                                          (mapv (fn [card]
+                                                  (Math/abs (nth (iterate (fn [x] (if (= x 1) -2 (- x 1)))
+                                                                          (+ 1 (int (mod card 13))))
+                                                                 ((suits-known i) (int (/ card 13)))))) ; times to iterate
+                                                hand))
+                                        player-cards2)
+         card-suit-rarity2 (keep-indexed (fn [i hand] ;4 known cards=higher better, 5 known cards, lower=better
+                                           (mapv #(- (+ 14 (mod %2 13))
+                                                     (* 2 (+ 1 ((suits-known i) (int (/ %2 13)))) %))  ;more cards known --> lower more valuable
+                                                 (map #(/ (+ 1 (mod % 13)) 13) hand)  ;decrease by 1/13
                                                  hand))
-                               player-cards2)
+                                         player-cards2)
          card-playable (mapv (fn [hand] (mapv (fn [card])))
                              player-cards2)]
+   ;;temp
+    (let [player-cards2 (mapv sort @player-cards)
+          player-suits (mapv (fn [hand] (reduce #(update %1 (int (/ %2 13)) inc)
+                                                [0 0 0 0] hand))
+                             player-cards2)
+          suits-known (mapv #(mapv + % (player-suits 0)) player-suits)] suits-known)
 
-    #_(loop [suit-played 1])
-
-    (when (> (count (@player-cards 1)) 0)
+    (when (> (count (@player-cards 1)) 9) ;might need to be 8 if discard during recur
       (let [remain-suits (mapv + player-suits[0] player-suits[first-player])
 
             #_suit-weights #_(map #() [1 1 1 broken])
