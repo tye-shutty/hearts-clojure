@@ -88,7 +88,7 @@
                                                                (suit-not-nums (int (/ card 13))))
                                                             card))
                                          hand)]
-                        (prn weights)
+                        #_(prn weights)
                         (loop [top3 (take 3 (sort #(> (first %) (first %2)) weights)) ;[weight card]
                                game-state game-state]
                           (if (empty? top3) game-state
@@ -98,82 +98,93 @@
 
 ;; makes low cards in suits that have been played/dealt more valuable ;in future can split into hand(player) and played(dealer) weights
 ;; just use 13 - card value for weights of broken suits, and 0.001 for suits that only I have
+;;4 known cards=higher better, 5 known cards, lower=better
 (defn card-suit-rarity [game-state]
-  (keep-indexed (fn [i hand] ;4 known cards=higher better, 5 known cards, lower=better
-                 (mapv #(- (+ 14 (mod %2 13))
-                        (* 2 (+ 1 (((game-state "suits-known") i) (int (/ %2 13)))) %))  ;more cards known --> lower more valuable ; maybe not good enough for encouraging throwing away isolated high cards
-                    (map #(/ (+ 1 (mod % 13)) 13) hand)  ;decrease by 1/13
-                    hand))
-               (game-state "player-cards2")))
+  ((fn [hand]
+     (mapv #(- (+ 14 (mod %2 13))
+               (* 2 (+ 1 (((game-state "suits-known") (game-state "curr-player")) (int (/ %2 13)))) %))  ;more cards known --> lower more valuable ; maybe not good enough for encouraging throwing away isolated high cards
+           (map #(/ (+ 1 (mod % 13)) 13) hand)  ;decrease by 1/13
+           hand))
+   ((game-state "player-cards2") (game-state "curr-player"))))
 
+;;values to add to weights (highest will be chosen)
+;throw only happens if I'm not winning
 (defn throw-weights [game-state]
   (let [curr-player (game-state "curr-player")]
-    (update (game-state "player-cards2") curr-player
-            ;;values to add to weights (highest will be chosen)
-            ;throw only happens if I'm not winning
-            (fn [hand]
-              (let [points-total (game-state "points-total")
-                    winning (game-state "winning")
-                    points-history (game-state "points-history")]
-                (map #(cond ;no shoot the moon strategy for the queen of spades
-                        (= % 36)
-                        (if (or (and (not= (points-total curr-player) (apply min points-total)) ;not leading and
-                                     (> (+ 13 (points-total (first winning))) 99)) ; round winner about to end game
-                                (and (> (- 30 (points-total curr-player)) (apply min points-total)) ;losing and
-                                     (< (- 13 (points-total curr-player)) (points-total (first winning))))) ;round winner is also losing
-                          -1000 1000)
-                        (or (= % 37) (= % 38))
-                        (if (reduce (fn [a v] (or a (= 36 (second v))))
-                                    false
-                                    (take-last (mod (count points-history) 4)))
-                          0 750)
-                        (> % 38)
-                        (+ % (cond (and (= 3 (count (filter zero? (first points-history)))) ;potential shoot moon
-                                        (not= (max (first points-history)) curr-player) ;I'm not shooting moon
-                                        (not= (max (first points-history)) ((first points-history) (first winning)))) ;round winner is not shooting moon
-                               500
-                               (and (not= curr-player (first winning)) ;about to lose
-                                    (> (points-total (first winning)) 95))
-                               -5
-                               (or (= curr-player (first winning))
-                                   (< (points-total (first winning))
-                                      (+ 20 (points-total curr-player)))) ;don't kick a man while he's down, unless you're winning
-                               2
-                               :else 0))
-                        :else 0)
-                     hand))))))
+    ((fn [hand]
+       (let [points-total (game-state "points-total")
+             winning (game-state "winning")
+             points-history (game-state "points-history")]
+         (map #(cond ;no shoot the moon strategy for the queen of spades
+                 (= % 36)
+                 (if (or (and (not= (points-total curr-player) (apply min points-total)) ;not leading and
+                              (> (+ 13 (points-total (first winning))) 99)) ; round winner about to end game
+                         (and (> (- 30 (points-total curr-player)) (apply min points-total)) ;losing and
+                              (< (- 13 (points-total curr-player)) (points-total (first winning))))) ;round winner is also losing
+                   -1000 1000)
+                 (or (= % 37) (= % 38))
+                 (if (reduce (fn [a v] (or a (= 36 (second v))))
+                             false
+                             (take-last (mod (count points-history) 4)))
+                   0 750)
+                 (> % 38)
+                 (+ % (cond (and (= 3 (count (filter zero? (first points-history)))) ;potential shoot moon
+                                 (not= (max (first points-history)) curr-player) ;I'm not shooting moon
+                                 (not= (max (first points-history)) ((first points-history) (first winning)))) ;round winner is not shooting moon
+                        500
+                        (and (not= curr-player (first winning)) ;about to lose
+                             (> (points-total (first winning)) 95))
+                        -5
+                        (or (= curr-player (first winning))
+                            (< (points-total (first winning))
+                               (+ 20 (points-total curr-player)))) ;don't kick a man while he's down, unless you're winning
+                        2
+                        :else 0))
+                 :else 0)
+              hand)))
+     ((game-state "player-cards2") curr-player))))
 
 (defn hand-init-state [game-state]
   (let [fp ((game-state "card-players") 0)
         game-state (move-card 0 fp 0 game-state)
-        player-cards2 (mapv sort (game-state "player-cards"))
+        player-cards2 (mapv #(vec (sort %)) (game-state "player-cards"))
         player-suits (mapv (fn [hand] (reduce #(update %1 (int (/ %2 13)) inc)
                                               [0 0 0 0] hand))
                            player-cards2)]
     (conj game-state
           {"first-player" fp
-           "curr-player" (let [np (+ fp 1)] (if (= np 4) 1 np))
-           "winning" [fp 0] ; player, card
-           "hand-history" (list [fp 0]) ;newest at beginning
-           "broken" (concat (take 36 (repeat 1)) '(0 1 1) (take 13 (repeat 0))) ; to be multiplied by weights
-           "player-cards2" player-cards2 ;for mapping across multiple weights of constant pos
+           "curr-player" (let [np (+ fp 1)] (if (= np 5) 1 np))
+           "winning" [fp 0]  ; player, card
+           "hand-history" (list [fp 0])  ;newest at beginning
+           "broken" (concat (take 36 (repeat 1)) '(0 1 1) (take 13 (repeat 0)))  ; to be multiplied by weights
+           "player-cards2" player-cards2  ;for mapping across multiple weights of constant pos
            "player-suits" player-suits
            "suits-known" (mapv #(mapv + % (player-suits 0)) player-suits)})))
 
+;; throw smaller weight card if no valid one
+(defn choice [game-state]
+  (let [card-suit-rarity (card-suit-rarity game-state)
+        throw-weights (throw-weights game-state)
+        suit (int (/ (second (game-state "winning")) 13))]
+    (-> (fn [choice key weight]
+          (let [card (((game-state "player-cards2") (game-state "curr-player")) key)]
+            (cond (and (= (int (/ card 13)) suit)
+                       (> weight (second choice)))  ;suit matches and more weight
+              [card weight]
+              (and (not= suit (int (/ (first choice) 13)))
+                   (> (+ weight (throw-weights key)) (second choice)))  ;no matching suit yet and weight higher
+              [card (+ weight (throw-weights key))]
+              :else choice)))
+        (reduce-kv [-1 0] (mapv * card-suit-rarity (game-state "broken")))  ;card, weight ;broken stops first round point throws
+        first)))
+
 #_(defn play-hand [game-state]
   ;; loop for each player
-  (loop [game-state (hand-init-state game-state)
-         card-suit-rarity (card-suit-rarity game-state)
-         throw-weights (throw-weights game-state)]
-    (if (> (count (player-cards2 0)) 51)
+  (loop [game-state (hand-init-state game-state)]
+    (if (> (count ((game-state "player-cards2") 0)) 51)
       game-state
-      (let [suit (int (/ (second winning) 13))
-            choice (first (reduce-kv (fn [m k v] (cond (and (= (int (/ k 13)) suit)
-                                                            (> v (second m))) [k v]  ;regular card
-                                                       (and (not= suit (int (/ (first m) 13)))
-                                                            (> (* -1 v) (second m))) [k (* -1 v)])) ; throw smaller weight card if no valid one
-                                     [-1 0] ;card, weight
-                                     (mapv * (card-suit-rarity curr-player) broken)))]
+      (let [choice (choice game-state)]
+
         (recur
           (if (= (game-state "first-player") curr-player)
             (first winning)
@@ -184,10 +195,7 @@
           (if (and (= suit (int (/ choice 13))) ; right suit
                    (> choice (second winning))) ; higher
             [curr-player choice]
-            winning)
-          ( )
-
-          broken player-suits suits-known card-suit-denom)))))
+            winning))))))
 
 
 
