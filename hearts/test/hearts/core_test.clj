@@ -114,7 +114,28 @@
                       (vector (count (filter #(and (= 1 (first %)) (= 4 (second %))) diff))
                               (count (filter #(and (= 2 (first %)) (= 1 (second %))) diff))
                               (count (filter #(and (= 3 (first %)) (= 2 (second %))) diff))
-                              (count (filter #(and (= 4 (first %)) (= 3 (second %))) diff)))))))))
+                              (count (filter #(and (= 4 (first %)) (= 3 (second %))) diff)))))))
+    (testing "Passed cards are recorded."
+      (let [pre-pass {"points-history" '([0 0 0 0 0] [0 0 0 0 0]),
+                      "card-history" '(),
+                      "first-players" '(),
+                      "pass-direction" -1,
+                      "human" [0 0 0 0 0],
+                      "player-cards" [#{}
+                                      #{0 3 4 11 12 18 26 38 40 42 43 44 50}
+                                      #{2 9 14 16 17 20 25 27 28 29 34 48 49}
+                                      #{6 7 13 15 19 30 31 32 33 35 36 41 47}
+                                      #{1 5 8 10 21 22 23 24 37 39 45 46 51}],
+                      "card-players" [1 4 2 1 1 4 3 3 4 2 4 1 1 3 2 3 2 2 1 3 2
+                                      4 4 4 4 2 1 2 2 2 3 3 3 3 2 3 3 4 1 4 1 3
+                                      1 1 1 4 4 3 2 2 1 4],
+                      "passed" {}}
+            post-pass (pass pre-pass)]
+        (is (= (post-pass "passed")
+               {[4 3] '(46 51 37),
+                [3 2] '(6 7 47),
+                [2 1] '(9 48 49),
+                [1 4] '(0 50 38)}))))))
 
 (deftest first-round-init-test
   (testing "Initialize information needed at the beginning of each hand."
@@ -136,23 +157,30 @@
                                              2 1 2 3 4 3 2 3 4 3 2 4 2 1 2 1]
                              "passed" []})]
       (is (= #{"winning" "playable" "curr-player" "player-suits" "suits-known"
-               "suit-players-broken"}
+               "suit-players-broken" "could-have-36"}
              (difference (set (keys post-init)) (set (keys pre-init)))))
       (is (= [1 0] (post-init-static "winning")))
       (is (= 2 (post-init-static "curr-player")))
       (is (= 0 (((post-init-static "player-cards") 0) 0)))))) ;dealer has 2 of clubs
 
-(deftest card-suit-rarity-test
+(deftest shoot-moon-test
+  (testing "A hand with several unbroken sequences connected to high cards returns true."
+    (is (shoot-moon '(8 9 10 11 23 24 25 35 36 37 49 50 51)))
+    (is (not (shoot-moon '(8 9 10 11 22 23 25 35 36 37 49 50 51))))))
+
+#_(deftest legal-weights-test
+  ;;completely rewrite
   (testing "Create weights for inverting card value given more known cards."
     (is (= (map #(format "%.2f" (float %))
-                (card-suit-rarity {"suits-known" [[8 4 0 1]]
+                (legal-weights {"suits-known" [[8 4 0 1]]
                                    "curr-player" 0
                                    "player-cards-sort" [0 1 2 4 6 7 9 12 15 16 22 25 48]}))
            '("12.62" "12.23" "11.85" "11.08" "10.31" "9.92" "9.15" "8.00" "13.69"
              "13.92" "15.31" "16.00" "19.92")))))
 
-(deftest throw-weights
-  (testing "Create weights for "))
+#_(deftest throw-weights
+  (testing "Create weights for throwing a card."))
+
 #_(deftest subsequent-play-card-test
   (testing "Card is given to dealer. Capable of being called 3 times sequentially."
     (let [pre-play (first-round-init (pass (deal (start-game))))
@@ -186,5 +214,3 @@
           discard2 (subsequent-play-card (choice-init discard1))
           discard3 (subsequent-play-card (choice-init discard2))]
       (is (= #{0 11 10 12} ((discard3 "player-cards") 0))))))
-
-#_(def pre-play {"player-cards" [#{0} #{7 18 19 32 33 34 35 39 41 42 43 47 48} #{1 6 9 10 11 16 20 25 26 27 28 29 30} #{2 3 4 5 8 12 13 15 22 38 46 51} #{14 17 21 23 24 31 36 37 40 44 45 49 50}], "player-suits" [[0 0 0 0] [1 2 4 6] [5 3 5 0] [7 3 1 2] [0 5 3 5]], "card-players" [0 2 3 3 3 3 2 1 3 2 2 2 3 3 4 3 2 4 1 1 2 4 3 4 4 2 2 2 2 2 2 4 1 1 1 1 4 4 3 1 4 1 1 1 4 4 3 1 1 4 4 3], "suits-known" [[0 0 0 0] [1 2 4 6] [5 3 5 0] [7 3 1 2] [0 5 3 5]], "pass-direction" 1, "card-history" '(([-1 -1 -1 0 -1])), "winning" [3 0], "playable" [1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0], "first-players" '((3)), "human" [0 0 0 0 0], "curr-player" 4, "passed" [], "points-history" '([0 0 0 0 0] [0 0 0 0 0] [0 0 0 0 0])})
