@@ -1,1 +1,0 @@
-(let [suit-vec (reduce #(update % (int (/ %2 13)) (fn [x] (conj x %2))) [[][][][]] (sorted-set 1 22 33 34 2)) suit-num (map count suit-vec) small (reduce #(if (< (apply + %) 3) (conj % %2) (reduced %2) [] (sort suit-num))] 
