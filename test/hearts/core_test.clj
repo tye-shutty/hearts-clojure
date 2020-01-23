@@ -44,6 +44,8 @@
                                            old-hand)))
                           (post-pass "player-cards")
                           (post-pass2 "player-cards")))))
+    (testing "Each player records shoot-moon strategy."
+             (is (= (map #(or (false? (second %)) (true? (second %))) (post-pass "shoot-moon")))))
     (testing "Players pass in different directions."
              (is (= [-1 4 1 2 3]
                     (mapv (fn [source-hand]
@@ -165,14 +167,28 @@
 
 (deftest shoot-moon-test
   (testing "A hand with several unbroken sequences connected to high cards returns true."
-    (is (shoot-moon '(8 9 10 11 23 24 25 35 36 37 49 50 51)))
-    (is (not (shoot-moon '(8 9 10 11 22 23 25 35 36 37 49 50 51))))))
+           ;((8 9 10 11) (10 11 12) (9 10 11) (10 11 12))
+           (is (shoot-moon '(8 9 10 11 23 24 25 35 36 37 49 50 51)))
+           ;((8 9 10 11) (9 10 12) (9 10 11 10 11 12))
+           (is (not (shoot-moon '(8 9 10 11 22 23 25 35 36 37 49 50 51))))))
 
 (deftest moon-weights-test
   (testing "Cards that are isolated low have greater weight."
-    (is (= (sort (moon-weights [1 11 12 13 23 24 32 33 34 39 41 43 45]))
-           '([0 11] [0 12] [1 23] [1 24] [4 32] [4 33] [4 34] [6 45] [7 43]
-             [8 41] [9 1] [9 39] [10 13])))))
+           (is (= (sort (moon-weights [1 11 12 13 23 24 32 33 34 39 41 43 45]))
+                  '([0 11] [0 12] [1 23] [1 24] [4 32] [4 33] [4 34] [6 45] [7 43]
+                       [8 41] [9 1] [9 39] [10 13])))))
+
+(deftest commonly-high-test
+  (testing "Cards over 7 are counted into their suits."
+    ;((0 3 5 10 12) (8 11) (9) (4 6 7 8 9))
+    (is (= (commonly-high (sort #{0 3 5 10 12 21 24 35 43 45 46 47 48}))
+           [2 2 1 2]))))
+
+(deftest unbroken-highest-test
+  (testing "Number of continuously high cards in each suit with highest card in
+           each suit is generated."
+           (is (= (unbroken-highest (sort #{5 6 12 13 14 17 22 27 28 33 34 37 38}))
+                  [[1 12] [1 9] [2 12] [0 -2]]))))
 
 #_(deftest legal-weights-test
   ;;completely rewrite

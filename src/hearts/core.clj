@@ -2,7 +2,6 @@
 
 (def player-suits-broken "player pos then suit pos (y/n=1/0 for that suit) [[1 1 1 1] [0 1 1 0]]" (atom []))
 (def suit-players-broken "suit pos then player pos (y/n = 1/0) [[0 0 0 0 0] [0 1 1 0 0]]" (atom []))
-(def round-history "most recent hand first, most recent round first, sorted maps ordered by play, key is player, val is card '('({1 6 2 8 3 51 0 12}))" (atom '()))
 
 (defn deal [game-state] "todo: expand beyond 1 deck, 4 players, add humans."
   (let [numplayers 4]
@@ -60,6 +59,9 @@
                            score))))
     true false))
 (defn unbroken-highest [hand]
+  "Returns pair of numbers for every suit. First is number of cards in a continuous sequence
+  of difference=1 from the highest, the second is the value of the highest card. 0 and -2 if
+  no cards in suit. Card value 0-12."
   (reduce (fn [suits card]
             (let [suit (quot card 13)
                   card (mod card 13)]
@@ -72,14 +74,28 @@
           [[0 -2] [0 -2] [0 -2] [0 -2]] ;[num high, last card] -suit pos
           hand))
 
+(defn commonly-high [hand]
+  "Counts cards over 7 in each suit."
+  (reduce (fn [acc card]
+            (if (> (mod card 13) 7)
+              (update acc (quot card 13) inc) acc))
+          [0 0 0 0]
+          hand))
+
 (defn shoot-moon [hand]
   (let [unbroken-highest (unbroken-highest hand)
-        high (map (fn [pair] (condp = (second pair)
-                                    12 (first pair)
-                                    11 (/ (first pair) 2)
-                                    0))
-                  unbroken-highest)]
-    (and (> (apply + high) 7)
+        commonly-high (commonly-high hand)
+        high (map (fn [pair estimate]
+                    (+ (condp = (second pair)
+                           12 (first pair)
+                           11 (/ (first pair) 1.25) ;less value for 2nd highest
+                           0)
+                       (/ ((fn [diff] (if (< diff 0) 0 diff))
+                               (- estimate (first pair)))
+                          2))) ;quarter value for other cards above 7
+                  unbroken-highest
+                  commonly-high)]
+    (and (> (apply + high) 6)
          (> (apply + (butlast high)) 5)))) ;not just hearts
 
 (defn moon-weights [hand]
@@ -161,6 +177,12 @@
                         (if (empty? top3) new-game-state
                           (recur (rest top3)
                             (let [card (second (first top3))
+                                  new-game-state (update new-game-state
+                                                         "shoot-moon"
+                                                         (fn [who-shoots?]
+                                                           (update who-shoots?
+                                                                   player
+                                                                   (constantly shoot-moon))))
                                   new-game-state (update new-game-state
                                                          "passed"
                                                          (fn [passed]
