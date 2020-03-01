@@ -1,7 +1,6 @@
 (ns hearts.core)
-
-(def player-suits-broken "player pos then suit pos (y/n=1/0 for that suit) [[1 1 1 1] [0 1 1 0]]" (atom []))
-(def suit-players-broken "suit pos then player pos (y/n = 1/0) [[0 0 0 0 0] [0 1 1 0 0]]" (atom []))
+;(use ['hearts.core-test :refer :all])
+#_(def player-suits-broken "player pos then suit pos (y/n=1/0 for that suit) [[1 1 1 1] [0 1 1 0]]" (atom []))
 
 (defn deal [game-state] "todo: expand beyond 1 deck, 4 players, add humans."
   (let [numplayers 4]
@@ -15,7 +14,7 @@
           (conj game-state
                 {"player-cards" players ;"player/dealer pos assoc with cards in sorted-set (dealer is 0, other decks start at 52) [#{8 15 42 46 51} #{1 7 33 43}]. aces high"
                  "card-players" cards ;"card pos assoc with player/dealer num [1 4]"
-                 "passed" {} ;player pos of this hand's passed cards {[1 4] '(0 51 40) [4 1] '(37 38 12)} ;{[source destination] '(cards)}
+                 "passed" {[0 0] '()} ;player pos of this hand's passed cards {[1 4] '(0 51 40) [4 1] '(37 38 12)} ;{[source destination] '(cards)}
                  "points-history" (cons [0 0 0 0 0] (game-state "points-history"))}))
         (let [chosen-index (rand-int (count needy-players))
               [chosen chosen-count] (needy-players chosen-index)]
@@ -192,33 +191,125 @@
                               (move-card card player destination new-game-state)))))))))))))
       (update "pass-direction" #(condp = %, -1 1, 1 2, 2 0, 0 -1))))
 
-;; makes low cards in suits that have been played/dealt more valuable ;in future can split into hand(player) and played(dealer) weights
+(defn first-round-init [game-state]
+  (let [fp ((game-state "card-players") 0)
+        hist-init (update [-2 -1 -1 -1 -1] fp (constantly 0))
+        player-cards-sort (mapv #(vec (sort %)) (game-state "player-cards"))
+        player-suits (mapv (fn [hand] (reduce #(update %1 (quot %2 13) inc)
+                                              [0 0 0 0] hand))
+                           player-cards-sort)
+        game-state (move-card 0 fp 0 game-state)]
+    (conj game-state
+          {"first-players" (cons (list fp) (game-state "first-players"))
+           "card-history" (cons (list hist-init) (game-state "card-history"))
+           "curr-player" (if (= fp 4) 1 (+ fp 1))
+           ; only for first round and when starting new rounds
+           "playable" (vec (concat (take 36 (repeat 1)) '(0 1 1) (take 13 (repeat 0))))
+           "winning" [fp 0]  ;player, card
+           "player-suits-card-count" player-suits
+           ;"suit pos then player pos (y/n = 1/0) [[0 0 0 0 0] [0 1 1 0 0]]"
+           "suit-players-broken" (vec (take 4 (repeat (vec (take 5 (repeat 0))))))
+           ;players that might have queen of spades, based on assumption they'd play it asap
+           ;also consider gameending implications of playing as a reason why they might retain it.
+           ;2=certainty (I have it or I passed it)
+           "could-have-36"
+           (keep-indexed (fn [player queen-holders]
+                           (let [from-to (filter #(= player (first %)) (keys (game-state "passed")))]
+                             (if (filter #{36} ((game-state "passed") (first from-to)))
+                               (update [0 0 0 0 0] (second from-to) (constantly 2))
+                               (if (= player ((game-state "card-players") 36))
+                                 (update [0 0 0 0 0] player (constantly 2))
+                                 queen-holders))))
+                         (vec (take 5 (repeat [0 1 1 1 1]))))
+           "suits-known" (mapv #(mapv + % (player-suits 0)) player-suits)})))
+
+;;NOT USEFUL
+;; makes low cards in suits that have been played/dealt more valuable
 ;;4 known cards=higher better, 5 known cards, lower=better
-;; should only consider what is known at start of round
+; maybe not good enough for encouraging throwing away isolated high cards
+(defn not-risky∵unplayed [curr-suits-known curr-hand]
+  (mapv #(- (+ 14 (mod %2 13))
+            (* 2 (+ 1 (curr-suits-known (quot %2 13))) %))
+        (map #(/ (+ 1 (mod % 13)) 13) curr-hand)  ;decrease by 1/13
+        curr-hand))
+
+;;only safe if know who has it
+(defn safe-from-36 [round-card-history curr-could-have-36 cp]
+  (some true? (map (fn [id player-past has-queen]
+                     (and (= 2 has-queen)
+                          (or (not= -1 player-past)
+                              (= cp id))))
+                   (range)
+                   round-card-history
+                   curr-could-have-36)))
+
+;;self will never be 1 (1 = maybe has queen)
+(defn probably-safe-from-36 [round-card-history curr-could-have-36]
+  (not (some false? (map (fn [player-past has-queen]
+                           (or (not= 1 has-queen)
+                                (< -1 player-past)))
+                         round-card-history
+                         curr-could-have-36))))
+
+;;player yet to play broken this suit before
+(defn safe-from-broken [round-card-history curr-suit-players-broken]
+  (not (some false? (map (fn [player-past has-broken]
+                           (or (not= 1 has-broken)
+                                (< -1 player-past)))
+                         round-card-history
+                         ;;who has broken current suit
+                         curr-suit-players-broken))))
+
+;;determine if in safe phase of game (before turn 5, less than 5 cards of this
+;suit played, less than 9 cards known and I'm third last player)
+;;Or, second last player, before turn 8, less than 10 cards known, less than 8
+;cards of suit played
+(defn safe-ish [num-rounds suits-known cp round-card-history suit]
+  (or (and (< (count (filter #{-1} round-card-history)) 3)
+           (< num-rounds 5)
+           (< ((suits-known cp) suit) 9)
+           (< ((suits-known 0) suit) 5))
+      (and (< (count (filter #{-1} round-card-history)) 2)
+           (< num-rounds 8)
+           (< ((suits-known cp) suit) 10)
+           (< ((suits-known 0) suit) 8))))
+
+;;play to win if one player is shooting moon (including self)
+;;do not attempt to win queen of spades unless shooting moon
 ;;also need to consider winning card (only need to be lower)
 ;;consider who you passed queen to
 ;;consider who had an opportunity to play queen of spades but did not
-;;how many players have discarded
 ;;how many players have broken && not discarded
-;;play to win if have good hand that needs to get rid of high card
-;;play to win if one player is shooting moon (including self)
-;;do not attempt to win queen of spades unless shooting moon
-#_(defn legal-weights [game-state]
-    ;;completely rewrite
-  (let [want-to-win (and (= 4 (count (game-state ""))))])
-  ((fn [hand]
-     (mapv #(- (+ 14 (mod %2 13))
-               (* 2 (+ 1 (((game-state "suits-known") (game-state "curr-player")) (quot %2 13))) %))  ;more cards known --> lower more valuable ; maybe not good enough for encouraging throwing away isolated high cards
-           (map #(/ (+ 1 (mod % 13)) 13) hand)  ;decrease by 1/13
-           hand))
-       (game-state "player-cards-sort")))
+;;how many players have discarded
+(defn on-suit-weights [game-state]
+  (let [cp (game-state "curr-player")
+        suit (quot (second (game-state "winning")) 13)
+        round-card-history (first (game-state "card-history"))
+        ;;only me left
+        safe (< (count (filter #{-1} round-card-history)) 2)
+        safe-from-36 (safe-from-36 round-card-history
+                                   ((game-state "could-have-36") cp)
+                                   cp)
+        probably-safe-from-36
+        (probably-safe-from-36 round-card-history
+                               ((game-state "could-have-36") cp))
+        safe-from-broken
+        (safe-from-broken round-card-history
+                          ((game-state "suit-players-broken") suit))
+        ;;player yet to play thrown this suit before (only of subtle use)
+        #_safe-from-thrown
+        safe-ish (safe-ish (count (game-state "card-history"))
+                           (game-state "suits-known")
+                           cp round-card-history suit)
+        ]
+    nil))
 
 ;;alternative weights (highest will be chosen)
 ;weight=0 means disallowed
 ;throw only happens if I'm not able to win hand
 ;additional logic is required elsewhere for shooting the moon
 
-#_(defn throw-weights [game-state]
+(defn off-suit-weights [game-state]
   (let [curr-player (game-state "curr-player")]
     ((fn [hand]
        (let [points-total (first (game-state "points-history"))
@@ -257,44 +348,28 @@
                                       2 0.7
                                       3 8)]
                        (/ (mod card 13)
-                          ((game-state "player-suits") (quot card 13)) ;by default throw high cards from suits with few cards
+                          ((game-state "player-suits-card-count") (quot card 13)) ;by default throw high cards from suits with few cards
                           breakage)))
                    hand))))
-     (game-state "player-cards-sort"))))
+     (game-state "curr-hand"))))
 
 ;; throw smaller weight card if no valid one
+;;takes shoot moon of winner into account
 ;;returns card
-#_(defn subsequent-choice [game-state]
-  (let [player-cards-sort (vec (sort ((game-state "player-cards") (game-state "curr-player"))))
-        game-state (conj game-state {"player-cards-sort" player-cards-sort})
-        legal-weights (legal-weights game-state)
-        throw-weights (throw-weights game-state)
-        suit (quot (second (game-state "winning")) 13)]
-    (let [legal-choice
-          (-> (fn [choice key weight]
-                (let [card (player-cards-sort key)
-                      playable ((game-state "playable") card)]
-                  (if (and (= (quot card 13) suit)
-                             (not= 0 playable)
-                             (> weight (second choice)))  ;suit matches and more weight
-                    [card weight]
-                    choice)))
-              (reduce-kv [-1 0] legal-weights)  ;card, weight ;playable stops first round point throws
-              first)] )
-    (if (= -1 legal-choice)
-      (first (reduce-kv (fn [choice key weight]
-                          (if (and (= 1 ((game-state "playable") (player-cards-sort key)))
-                                   (> weight (second choice)))
-                            [(player-cards-sort key) weight]
-                            choice))
-                        [-1 0]
-                        throw-weights))
-      legal-choice)))
+(defn subsequent-choice [game-state]
+  (let [curr-hand (vec (sort ((game-state "player-cards") (game-state "curr-player"))))
+        game-state (conj game-state {"curr-hand" curr-hand})
+        suit (quot (second (game-state "winning")) 13)
+        weights (if (= 0 (((game-state "player-suits-card-count") (game-state "curr-player")) suit))
+                  (off-suit-weights game-state)
+                  (on-suit-weights game-state))]
+    (.indexOf (apply max weights) weights)  ;biased towards lower cards
+    ))
 
 ;;returns card
 #_(defn leading-choice [game-state]
-  (let [legal-weights (legal-weights game-state)
-        suit-count ((game-state "player-suits") (game-state "curr-player"))
+  (let [on-suit-weight (on-suit-weight game-state)
+        suit-count ((game-state "player-suits-card-count") (game-state "curr-player"))
         hand ((game-state "player-cards2") (game-state "curr-player"))]
     (->> (keep-indexed (fn [key weight]
                          (/ weight (suit-count (quot (hand key) 13)))))
@@ -312,43 +387,7 @@
                                         [-1 -1000]))
                       (first acc)))))))
 
-(defn first-round-init [game-state]
-  (let [fp ((game-state "card-players") 0)
-        hist-init (update [-1 -1 -1 -1 -1] fp (constantly 0))
-        player-cards-sort (mapv #(vec (sort %)) (game-state "player-cards"))
-        player-suits (mapv (fn [hand] (reduce #(update %1 (quot %2 13) inc)
-                                              [0 0 0 0] hand))
-                           player-cards-sort)
-        game-state (move-card 0 fp 0 game-state)]
-    (conj game-state
-          {"first-players" (cons (list fp) (game-state "first-players"))
-           "card-history" (cons (list hist-init) (game-state "card-history"))
-           "curr-player" (if (= fp 4) 1 (+ fp 1))
-           "playable" (vec (concat (take 36 (repeat 1)) '(0 1 1) (take 13 (repeat 0))))  ; only for first round and when starting new rounds
-           "winning" [fp 0]  ;player, card
-           "player-suits" player-suits
-           "suit-players-broken" (vec (take 4 (repeat (vec (take 5 (repeat 0))))));"suit pos then player pos (y/n = 1/0) [[0 0 0 0 0] [0 1 1 0 0]]"
-           "could-have-36" [0 1 1 1 1] ;players that might have queen of spades, based on assumption they'd play it asap ;also consider game-ending implications of playing as a reason why they might retain it.
-           "suits-known" (mapv #(mapv + % (player-suits 0)) player-suits)}))) ;doubles dealer known (inconsequential)
-
-#_(defn subsequent-round-init [game-state]
-  (let [fp (first (game-state "winning"))
-        game-state (conj game-state
-                         {"playable" (vec (if (= 0 (apply + (apply map - (take 2 (game-state "points-history")))))
-                                             (concat (take 36 (repeat 1)) '(0 1 1) (take 13 (repeat 0)))
-                                             (take 52 (repeat 1))))})
-        leading-choice (leading-choice game-state)
-        hist-init (update [-1 -1 -1 -1 -1] fp (constantly leading-choice))]
-    (conj (move-card leading-choice fp 0 game-state)
-          {"first-players" (cons (cons fp (first (game-state "first-players")))
-                                (rest (game-state "first-players")))
-           "card-history" (cons (cons hist-init (first (game-state "card-history")))
-                                (rest (game-state "card-history")))
-           "curr-player" (if (= fp 4) 1 (+ fp 1))
-           "winning" [fp leading-choice]
-           "playable" (vec (take 52 (repeat 1)))})))
-
-#_(defn subsequent-play-card [game-state]
+(defn subsequent-play-card [game-state]
   (let [choice (subsequent-choice game-state)]
     (conj (move-card choice (game-state "curr-player") 0 game-state)
           {"curr-player" (if (= (game-state "curr-player") 4)
@@ -371,6 +410,23 @@
                                                (update players
                                                        (game-state "curr-player")
                                                        (constantly 1))))))})))
+
+#_(defn subsequent-round-init [game-state]
+  (let [fp (first (game-state "winning"))
+        game-state (conj game-state
+                         {"playable" (vec (if (= 0 (apply + (apply map - (take 2 (game-state "points-history")))))
+                                             (concat (take 36 (repeat 1)) '(0 1 1) (take 13 (repeat 0)))
+                                             (take 52 (repeat 1))))})
+        leading-choice (leading-choice game-state)
+        hist-init (update [-1 -1 -1 -1 -1] fp (constantly leading-choice))]
+    (conj (move-card leading-choice fp 0 game-state)
+          {"first-players" (cons (cons fp (first (game-state "first-players")))
+                                (rest (game-state "first-players")))
+           "card-history" (cons (cons hist-init (first (game-state "card-history")))
+                                (rest (game-state "card-history")))
+           "curr-player" (if (= fp 4) 1 (+ fp 1))
+           "winning" [fp leading-choice]
+           "playable" (vec (take 52 (repeat 1)))})))
 
 #_(defn play-hand [game-state]
   ;; loop for each player

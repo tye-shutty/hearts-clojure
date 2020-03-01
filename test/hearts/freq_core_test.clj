@@ -4,7 +4,7 @@
 
 
 (defn shoot-moon-occurrence []
-  "Tests frequency of shoot-moon strategy."
+  "Returns number of turns until of shoot-moon strategy first chosen."
   (loop [g2 (pass (start-game))
          count 0]
     (if (or (reduce-kv (fn [acc k v] (or v acc)) false (g2 "shoot-moon")) (> count 100))

@@ -4,6 +4,9 @@
   (:use [clojure.set :only [union intersection difference]]))
 ;;test all with (clojure.test/run-tests 'hearts.core-test) or lein test
 
+(defn suitnum->handnum [suits]
+  (flatten (map (fn [s floor] (map (fn [c] (+ c floor)) s)) suits '(0 13 26 39))))
+
 (deftest deal-test
   (testing "Each player receives cards."
     (is (= (count ((start-game) "player-cards"))
@@ -131,12 +134,13 @@
                       "card-players" [1 4 2 1 1 4 3 3 4 2 4 1 1 3 2 3 2 2 1 3 2
                                       4 4 4 4 2 1 2 2 2 3 3 3 3 2 3 3 4 1 4 1 3
                                       1 1 1 4 4 3 2 2 1 4],
-                      "passed" {}}
+                      "passed" {[0 0] '()}}
             post-pass (pass pre-pass)]
         (is (= (post-pass "passed")
-               {[4 3] '(46 51 37),
-                [3 2] '(6 7 47),
-                [2 1] '(9 48 49),
+               {[0 0] '()
+                [4 3] '(46 51 37)
+                [3 2] '(6 7 47)
+                [2 1] '(9 48 49)
                 [1 4] '(0 50 38)}))))))
 
 (deftest first-round-init-test
@@ -157,20 +161,24 @@
                              "card-players" [1 3 1 4 1 4 4 4 2 1 4 3 3 3 1 2 1 4
                                              2 2 2 1 4 3 3 1 4 1 4 2 4 1 3 3 3 2
                                              2 1 2 3 4 3 2 3 4 3 2 4 2 1 2 1]
-                             "passed" []})]
-      (is (= #{"winning" "playable" "curr-player" "player-suits" "suits-known"
-               "suit-players-broken" "could-have-36"}
+                             "passed" {}
+                             "shoot-moon" false})]
+      (is (= #{"winning" "playable" "curr-player" "player-suits-card-count"
+               "suits-known" "suit-players-broken" "could-have-36"}
              (difference (set (keys post-init)) (set (keys pre-init)))))
       (is (= [1 0] (post-init-static "winning")))
       (is (= 2 (post-init-static "curr-player")))
-      (is (= 0 (((post-init-static "player-cards") 0) 0)))))) ;dealer has 2 of clubs
+      ;dealer has 2 of clubs
+      (is (= 0 (((post-init-static "player-cards") 0) 0)))
+      (is (= (post-init-static "suits-known")
+             [[0 0 0 0][4 4 3 2][1 4 4 4][3 3 3 4][5 2 3 3]])))))
 
 (deftest shoot-moon-test
   (testing "A hand with several unbroken sequences connected to high cards returns true."
            ;((8 9 10 11) (10 11 12) (9 10 11) (10 11 12))
-           (is (shoot-moon '(8 9 10 11 23 24 25 35 36 37 49 50 51)))
+           (is (shoot-moon (suitnum->handnum '((7 8 10 11)(9 10 12)(9 10 12)(7 8 9)))))
            ;((8 9 10 11) (9 10 12) (9 10 11 10 11 12))
-           (is (not (shoot-moon '(8 9 10 11 22 23 25 35 36 37 49 50 51))))))
+           (is (not (shoot-moon (suitnum->handnum '((7 8 9 11)(9 10 12)(9 10 12)(7 8 9))))))))
 
 (deftest moon-weights-test
   (testing "Cards that are isolated low have greater weight."
@@ -190,17 +198,46 @@
            (is (= (unbroken-highest (sort #{5 6 12 13 14 17 22 27 28 33 34 37 38}))
                   [[1 12] [1 9] [2 12] [0 -2]]))))
 
-#_(deftest legal-weights-test
+(deftest not-risky∵unplayed-test
   ;;completely rewrite
   (testing "Create weights for inverting card value given more known cards."
     (is (= (map #(format "%.2f" (float %))
-                (legal-weights {"suits-known" [[8 4 0 1]]
-                                   "curr-player" 0
-                                   "player-cards-sort" [0 1 2 4 6 7 9 12 15 16 22 25 48]}))
+                (let [hand (vec (suitnum->handnum '((0 1 2 4 6 7 9 12)(2 3 9 12)()(9))))]
+                  (not-risky∵unplayed [8 4 0 1] hand)))
            '("12.62" "12.23" "11.85" "11.08" "10.31" "9.92" "9.15" "8.00" "13.69"
              "13.92" "15.31" "16.00" "19.92")))))
 
-#_(deftest throw-weights
+(deftest safe-from-36-test
+  (testing "Able to know if impossible to get 36 (Q of Spades) based on
+           yet to play players in card-history and could-have-36"
+           (is (safe-from-36 [-2 -1 -1 0 0] [0 0 0 2 0] 1))
+           (is (not (safe-from-36 [-2 -1 -1 0 0] [0 0 2 0 0] 1)))
+           (is (safe-from-36 [-2 -1 -1 0 0] [0 2 0 0 0] 1))))
+
+(deftest probably-safe-from-36-test
+  (testing "Able to know if unlikely to get 36 based on card-history and
+           could-have-36."
+           (is (probably-safe-from-36 [-2 -1 -1 0 0] [0 0 0 1 1]))
+           (is (not (probably-safe-from-36 [-2 -1 -1 0 0] [0 0 1 0 1])))))
+
+(deftest safe-from-broken-test
+  (testing "Able to know if unlikely to get 36 based on card-history and
+           could-have-36."
+           (is (safe-from-broken [-2 -1 -1 0 0] [0 0 0 1 1]))
+           (is (not (safe-from-broken [-2 -1 -1 0 0] [0 0 1 0 1])))))
+
+(deftest safe-ish-test
+  (testing "Able to know when less likely for others to break suit."
+           (is (safe-ish 1 [[0 0 0 0][8 0 0 0][0 0 0 0][0 0 0 0][0 0 0 0]]
+                         1 [-2 -1 -1 0] 0))
+           (is (not (safe-ish 1 [[0 0 0 0][9 0 0 0][0 0 0 0][0 0 0 0][0 0 0 0]]
+                              1 [-2 -1 -1 0] 0)))
+           (is (not (safe-ish 5 [[0 0 0 0][8 0 0 0][0 0 0 0][0 0 0 0][0 0 0 0]]
+                              1 [-2 -1 -1 0] 0)))
+           (is (not (safe-ish 1 [[5 0 0 0][8 0 0 0][0 0 0 0][0 0 0 0][0 0 0 0]]
+                              1 [-2 -1 -1 0] 0)))))
+
+#_(deftest off-suit-weights
   (testing "Create weights for throwing a card."))
 
 #_(deftest subsequent-play-card-test
