@@ -1,2 +1,4 @@
 .lein*
 .nrepl-port
+*.iml
+.DS_Store
