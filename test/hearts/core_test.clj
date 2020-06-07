@@ -1,11 +1,24 @@
 (ns hearts.core-test
-  (:require [clojure.test :refer :all]
-            [hearts.core :refer :all])
-  (:use [clojure.set :only [union intersection difference]]))
+  (:require [clojure.test :refer [testing is deftest]]
+            [hearts.pass-ns :refer [pass
+                                    shoot-moon
+                                    moon-weights
+                                    commonly-high
+                                    unbroken-highest]]
+            [hearts.off-suit-weights-ns :refer [off-suit-weights]]
+            [hearts.on-suit-weights :refer [on-suit-weights
+                                            not-risky∵unplayed
+                                            safe-from-36
+                                            probably-safe-from-36
+                                            safe-from-broken
+                                            safe-ish]]
+            [hearts.core :refer [start-game first-round-init]]
+            [clojure.set :refer [intersection difference]]))
 ;;test all with (clojure.test/run-tests 'hearts.core-test) or lein test
 
 (defn suitnum->handnum [suits]
-  (flatten (map (fn [s floor] (map (fn [c] (+ c floor)) s)) suits '(0 13 26 39))))
+  (flatten (map (fn [s floor]
+                  (map (fn [c] (+ c floor)) s)) suits '(0 13 26 39))))
 
 (deftest deal-test
   (testing "Each player receives cards."
@@ -22,7 +35,8 @@
                    ((start-game) "card-players")))))
   (testing "Variables are initialized."
     (is (= (sort '("player-cards", "card-players", "pass-direction", "passed",
-                   "card-history", "points-history", "human", "first-players"))
+                   "card-history", "points-history", "human", "first-players",
+                   "shoot-moon"))
            (sort (keys (start-game)))))))
 
 (deftest pass-test
@@ -48,7 +62,8 @@
                           (post-pass "player-cards")
                           (post-pass2 "player-cards")))))
     (testing "Each player records shoot-moon strategy."
-             (is (= (map #(or (false? (second %)) (true? (second %))) (post-pass "shoot-moon")))))
+             (is (= (map #(or (false? (second %)) (true? (second %)))
+                         (post-pass "shoot-moon")))))
     (testing "Players pass in different directions."
              (is (= [-1 4 1 2 3]
                     (mapv (fn [source-hand]
@@ -237,15 +252,15 @@
            (is (not (safe-ish 1 [[5 0 0 0][8 0 0 0][0 0 0 0][0 0 0 0][0 0 0 0]]
                               1 [-2 -1 -1 0] 0)))))
 
-#_(deftest off-suit-weights
+#_(deftest off-suit-weights-test
   (testing "Create weights for throwing a card."))
 
 #_(deftest subsequent-play-card-test
   (testing "Card is given to dealer. Capable of being called 3 times sequentially."
     (let [pre-play (first-round-init (pass (deal (start-game))))
-          discard1 (subsequent-play-card (choice-init pre-play))
-          discard2 (subsequent-play-card (choice-init discard1))
-          discard3 (subsequent-play-card (choice-init discard2))]
+          discard1 (subsequent-play-card pre-play)
+          discard2 (subsequent-play-card discard1)
+          discard3 (subsequent-play-card discard2)]
       (is (= 1 (count ((pre-play "player-cards") 0))))
       (is (= 2 (count ((discard1 "player-cards") 0))))
       (is (= 3 (count ((discard2 "player-cards") 0))))
