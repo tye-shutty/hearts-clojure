@@ -2,7 +2,7 @@
   (:gen-class)
   (:require [hearts.on-suit-weights :refer [on-suit-weights]]
         [hearts.pass-ns :refer [pass]]
-        [hearts.move-ns :refer [move-card]]
+        [hearts.common-helpers :refer [move-card]]
         [hearts.off-suit-weights-ns :refer [off-suit-weights]]))
 ;(use ['hearts.core-test :refer :all])
 #_(def player-suits-broken "player pos then suit pos (y/n=1/0 for that suit) [[1 1 1 1] [0 1 1 0]]" (atom []))
@@ -32,12 +32,21 @@
                    (update needy-players chosen-index #(list (first %) (inc (second %)))))))))))
 
 (defn start-game []
-  (deal {"points-history" '([0 0 0 0 0]) ;the accumulated points at the end of each hand, most recent first, then player pos '([0 13 4 0 9] [0 0 13 13 0]) ;last element is all zeros
-         "card-history" '() ;"hand pos then round pos (most recent to oldest), then player pos, '(([-1 0 -1 -1 12]))"
-         "first-players" '()  ;same structure as card-history to save order of play
-         "pass-direction" -1 ;"-1=right, 1=left(clockwise, the order of the player-cards), 2=across(for now), 0=no passing"
+  (deal {;;the cumulative points at the end of each hand, most recent first,
+         ;then player pos '([0 13 4 0 9] [0 0 13 13 0]) ;last element is all
+         ;zeros
+         "points-history" '([0 0 0 0 0])
+         ;;"hand pos then round pos (most recent to oldest), then player pos,
+         ;'(([-1 0 -1 -1 12]))"
+         "card-history" '()
+         ;;same structure as card-history to save order of play
+         "first-players" '()
+         ;;"-1=right, 1=left(clockwise, the order of the player-cards),
+         ;2=across(for now), 0=no passing"
+         "pass-direction" -1
          "shoot-moon" [false false false false false]
-         "human" [0 0 0 0 0]})) ;"player/dealer pos y/n [0 0 0 0 1]"
+         ;;"player/dealer pos y/n [0 0 0 0 1]"
+         "human" [0 0 0 0 0]}))
 
 (defn first-round-init [game-state]
   (let [fp ((game-state "card-players") 0)

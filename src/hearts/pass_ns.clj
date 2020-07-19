@@ -1,5 +1,5 @@
 (ns hearts.pass-ns
-  (:require [hearts.move-ns :refer [move-card]]))
+  (:require [hearts.common-helpers :refer [move-card commonly-high]]))
 
 (defn human-select-pass [player] nil)
 #_(defn human-pass [human-player target-player]
@@ -28,14 +28,6 @@
                           [(inc (first pair)) card]
                           [1 card])))))
           [[0 -2] [0 -2] [0 -2] [0 -2]] ;[num high, last card] -suit pos
-          hand))
-
-(defn commonly-high [hand]
-  "Counts cards over 7 in each suit."
-  (reduce (fn [acc card]
-            (if (> (mod card 13) 7)
-              (update acc (quot card 13) inc) acc))
-          [0 0 0 0]
           hand))
 
 (defn shoot-moon [hand]
