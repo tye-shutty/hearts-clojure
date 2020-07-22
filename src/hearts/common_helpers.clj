@@ -18,7 +18,7 @@
     :else 0))
 
 (defn commonly-high
-  "Returns list of cards over 7 in each suit."
+  "Returns list of number of cards over 7 in each suit."
   [hand]
   (reduce (fn [acc card]
             (if (> (mod card 13) 7)

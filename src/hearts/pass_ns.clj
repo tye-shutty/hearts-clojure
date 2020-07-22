@@ -14,10 +14,11 @@
                            false
                            score))))
     true false))
-(defn unbroken-highest [hand]
+(defn unbroken-highest
   "Returns pair of numbers for every suit. First is number of cards in a continuous sequence
   of difference=1 from the highest, the second is the value of the highest card. 0 and -2 if
   no cards in suit. Card value 0-12."
+  [hand]
   (reduce (fn [suits card]
             (let [suit (quot card 13)
                   card (mod card 13)]

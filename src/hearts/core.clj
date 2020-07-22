@@ -7,8 +7,9 @@
 ;(use ['hearts.core-test :refer :all])
 #_(def player-suits-broken "player pos then suit pos (y/n=1/0 for that suit) [[1 1 1 1] [0 1 1 0]]" (atom []))
 
-(defn deal [game-state]
+(defn deal
   "todo: expand beyond 1 deck, 4 players, add humans."
+  [game-state]
   (let [numplayers 4]
     (loop [players (vec (take (inc numplayers) (repeat (sorted-set))))
            cards (vec (take 52 (repeat 0)))
@@ -81,12 +82,9 @@
                          (vec (take 5 (repeat [0 1 1 1 1]))))
            "suits-known" (mapv #(mapv + % (player-suits 0)) player-suits)})))
 
-
-
-;; throw smaller weight card if no valid one
-;;takes shoot moon of winner into account
-;;returns card
-(defn subsequent-choice [game-state]
+(defn subsequent-choice
+  "Returns best card to play when not leading choice"
+  [game-state]
   (let [curr-hand (vec (sort ((game-state "player-cards")
                                           (game-state "curr-player"))))
         game-state (conj game-state {"curr-hand" curr-hand})
