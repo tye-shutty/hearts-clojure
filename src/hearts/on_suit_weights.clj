@@ -1,7 +1,4 @@
 (ns hearts.on-suit-weights
-  "on-suit-weights provides the weight for every card assuming the player is
-  playing a matching suit. The key decision is whether or not to try to win the
-  round."
   (:require [hearts.common-helpers :refer [card->points commonly-high]]))
 
 
@@ -17,25 +14,28 @@
         curr-hand))
 
 (defn safe-from-36?
-  "only safe if know who has it"
+  "Has queen, has passed queen to a finished player, or queen has been played
+  (not this round)."
   [round-card-history curr-could-have-36 cp]
-  (some true? (map (fn [id player-past has-queen]
-                     (and (= 2 has-queen)
-                          (or (not= -1 player-past)
-                              (= cp id))))
-                   (range)
-                   round-card-history
-                   curr-could-have-36)))
+  (and (some true? (map (fn [id player-past has-queen]
+                          (and (= 2 has-queen)
+                               (or (not= -1 player-past)
+                                   (= cp id))))
+                        (range)
+                        round-card-history
+                        curr-could-have-36))
+       (some #{36} round-card-history)))
 
 (defn probably-safe-from-36?
   "No one left to play 36 who hasn't had the opportunity to play it already.
   Self will never be 1 (1 = maybe has queen)."
   [round-card-history curr-could-have-36]
-  (not (some false? (map (fn [player-past has-queen]
+  (and (not (some false? (map (fn [player-past has-queen]
                            (or (not= 1 has-queen)
                                 (< -1 player-past)))
                          round-card-history
-                         curr-could-have-36))))
+                         curr-could-have-36)))
+       (some #{36} round-card-history)))
 
 (defn safe-from-broken?
   "player yet to play not broken this suit before"
@@ -78,9 +78,11 @@
       (< ((commonly-high hand) suit) 2))
     false))
 
-
 (defn on-suit-weights
-  "play to win if one player is shooting moon (including self)
+  "on-suit-weights provides the weight for every card assuming the player is
+  playing a matching suit. The key decision is whether or not to try to win the
+  round.
+  play to win if one player is shooting moon (including self)
   do not attempt to win queen of spades unless shooting moon
   also need to consider winning card (only need to be lower)
   consider who you passed queen to
@@ -97,27 +99,51 @@
         last? (< (count (filter #{-1} round-card-history)) 2)
 
         safe-from-36? (safe-from-36? round-card-history
-                                   ((game-state "could-have-36") cp)
-                                   cp)
+                                     ((game-state "could-have-36") cp)
+                                     cp)
         probably-safe-from-36?
         (probably-safe-from-36? round-card-history
-                               ((game-state "could-have-36") cp))
+                                ((game-state "could-have-36") cp))
         safe-from-broken?
         (safe-from-broken? round-card-history
-                          ((game-state "suit-players-broken") suit))
+                           ((game-state "suit-players-broken") suit))
         ;;player yet to play thrown this suit before (only of subtle use)
         #_safe-from-thrown?
         early-safe? (early-safe? (count (game-state "card-history"))
-                           (game-state "suits-known")
-                           cp round-card-history suit)
+                                 (game-state "suits-known")
+                                 cp round-card-history suit)
         ;;consider winning hand anyway:
         win-avoid-end? (win-avoid-end? (first (game-state "winning"))
-                                         round-card-history
-                                         (first (game-state "points-history")))
+                                       round-card-history
+                                       (first (game-state "points-history")))
         ;;if safe, consider winning if the following checks pass:
+        ;in future, consider if that isolated high card has been broken
+        ;(usually already dealt with by early-safe?)
         isolated-high? (isolated-high? ((game-state "player-cards") cp)
                                        suit early-safe?
                                        (game-state "player-suits-card-count"))
-        shoot-moon? ((game-state "shoot-moon"))
-        ]
-    (if (or last? safe-from-36? win-avoid-end?))))
+        shoot-moon? (some #{true} (game-state "shoot-moon"))
+        ;in future, consider points relative to end of game
+        losing? (> (- ((first (game-state "points-history")) cp) 15)
+                   (apply min (first (game-state "points-history"))))
+        want-win?
+        (if (or win-avoid-end?
+                shoot-moon?
+                (and (or last?
+                         safe-from-broken?)
+                     (or safe-from-36?
+                         (and probably-safe-from-36? losing?))
+                     ;in future, could act more risky if losing
+                     early-safe?
+                     isolated-high?))
+          true
+          false)]
+    ;in future consider barely winning in some circumstances
+    (update (game-state "player-cards") cp
+            (fn [hand] (map (fn [card] (if (= suit (quot card 13))
+                                         (if (or want-win?
+                                                 (< card (second (game-state "winning"))))
+                                           card
+                                           (/ card 100))
+                                         0))
+                            hand)))))

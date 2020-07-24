@@ -67,9 +67,10 @@
            "player-suits-card-count" player-suits
            ;"suit pos then player pos (y/n = 1/0) [[0 0 0 0 0] [0 1 1 0 0]]"
            "suit-players-broken" (vec (take 4 (repeat (vec (take 5 (repeat 0))))))
-           ;players that might have queen of spades, based on assumption they'd play it asap
-           ;also consider gameending implications of playing as a reason why they might retain it.
-           ;2=certainty (I have it or I passed it)
+           ;players that might have queen of spades, based on assumption they'd
+           ;play it asap also consider gameending implications of playing as a
+           ;reason why they might retain it. 2=certainty (I have it or I passed
+           ;it), 0=missed opportunity to play it (probably doesn't have it)
            "could-have-36"
            (keep-indexed (fn [player queen-holders]
                            (let [from-to (filter #(= player (first %))
