@@ -83,8 +83,6 @@
                          (vec (take 5 (repeat [0 1 1 1 1])))))
            "suits-known" (mapv #(mapv + % (player-suits 0)) player-suits)})))
 
-((first-round-init (pass (start-game))) "could-have-36")
-
 (defn subsequent-choice
   "Returns best card to play when not leading choice"
   [game-state]

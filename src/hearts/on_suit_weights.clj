@@ -122,7 +122,11 @@
         isolated-high? (isolated-high? ((game-state "player-cards") cp)
                                        suit early-safe?
                                        ((game-state "player-suits-card-count") cp))
-        shoot-moon? (some #{true} (game-state "shoot-moon"))
+        shoot-moon? (or (= true ((game-state "shoot-moon") cp))
+                        (let [score (first (game-state "points-history"))]
+                          (and (= 4 (count (filter zero? score)))
+                               (= 0 (score cp))
+                               (> (apply max score) 4))))
         ;in future, consider points relative to end of game
         losing? (> (- ((first (game-state "points-history")) cp) 15)
                    (apply min (first (game-state "points-history"))))
