@@ -2,7 +2,7 @@
   (:require [hearts.common-helpers :refer [card->points commonly-high]]))
 
 
-#_(defn not-risky∵unplayed
+(defn not-risky∵unplayed
   "NOT USEFUL
   makes low cards in suits that have been played/dealt more valuable
   4 known cards=higher better, 5 known cards, lower=better
@@ -24,18 +24,18 @@
                         (range)
                         round-card-history
                         curr-could-have-36))
-       (some #{36} round-card-history)))
+       (not (some #{36} round-card-history))))
 
 (defn probably-safe-from-36?
   "No one left to play 36 who hasn't had the opportunity to play it already.
   Self will never be 1 (1 = maybe has queen)."
   [round-card-history curr-could-have-36]
-  (and (not (some false? (map (fn [player-past has-queen]
-                           (or (not= 1 has-queen)
-                                (< -1 player-past)))
-                         round-card-history
-                         curr-could-have-36)))
-       (some #{36} round-card-history)))
+  (and (not (some true? (map (fn [player-past has-queen]
+                                (and (= 1 has-queen)
+                                    (= -1 player-past)))
+                              round-card-history
+                              curr-could-have-36)))
+       (not (some #{36} round-card-history))))
 
 (defn safe-from-broken?
   "player yet to play not broken this suit before"
@@ -92,7 +92,7 @@
   [game-state]
   (let [cp (game-state "curr-player")
         suit (quot (second (game-state "winning")) 13)
-        round-card-history (first (game-state "card-history"))
+        round-card-history (first (first (game-state "card-history")))
 
         ;;consider winning hand if the following safety checks pass:
         ;;only me left to play?
@@ -121,7 +121,7 @@
         ;(usually already dealt with by early-safe?)
         isolated-high? (isolated-high? ((game-state "player-cards") cp)
                                        suit early-safe?
-                                       (game-state "player-suits-card-count"))
+                                       ((game-state "player-suits-card-count") cp))
         shoot-moon? (some #{true} (game-state "shoot-moon"))
         ;in future, consider points relative to end of game
         losing? (> (- ((first (game-state "points-history")) cp) 15)
@@ -139,11 +139,10 @@
           true
           false)]
     ;in future consider barely winning in some circumstances
-    (update (game-state "player-cards") cp
-            (fn [hand] (map (fn [card] (if (= suit (quot card 13))
-                                         (if (or want-win?
-                                                 (< card (second (game-state "winning"))))
-                                           card
-                                           (/ card 100))
-                                         0))
-                            hand)))))
+    (mapv (fn [card] (if (= suit (quot card 13))
+                       (if (or want-win?
+                               (< card (second (game-state "winning"))))
+                         card
+                         (/ card 100))
+                       0))
+          (sort ((game-state "player-cards") cp)))))

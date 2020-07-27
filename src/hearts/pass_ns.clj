@@ -6,13 +6,15 @@
   (prn (str "Player " human-player ", what card of yours will you pass to player " target-player "?\n" "Your cards: " (@player-cards human-player)))
   (let [card (clojure.edn/read-string (read-line))] (if (= (type card) Long) (move-card card human-player target-player) (throw (Exception. "not a java.lang.Long")))))
 
-(defn keep-queen [player score num-spades pass-dir]
-  (if (or (> num-spades 5) ;keep queen if have 6+ spades ;in future consider only low spades?
-          (and (> num-spades 3) ;keep queen if have 4+ spades AND
-               (or (= pass-dir 1) ; if it would be played after you play OR
-                   (reduce #(or %1 (> %2 (+ 20 (score (- player 1))))) ;losing
-                           false
-                           score))))
+;ai always keeps?
+(defn keep-queen [player score num-spades pass-dir has-queen]
+  (if (and has-queen
+           (or (> num-spades 5) ;keep queen if have 6+ spades ;in future consider only low spades?
+               (and (> num-spades 3) ;keep queen if have 4+ spades AND
+                    (or (= pass-dir 1) ; if it would be played after you play OR
+                        (reduce #(or %1 (> %2 (+ 20 (score (- player 1))))) ;losing
+                                false
+                                score)))))
     true false))
 (defn unbroken-highest
   "Returns pair of numbers for every suit. First is number of cards in a continuous sequence
@@ -156,12 +158,13 @@
                                                  [0 0 0 0]
                                                  hand) ;num cards in each suit
                                ; num cards not in each suit
-                               suit-not-nums (mapv #(- 14 %) suit-nums)
+                               suit-not-nums (mapv #(- 13 %) suit-nums)
                                score (first (game-state "points-history"))
                                shoot-moon (shoot-moon hand)
                                keep-queen (keep-queen player score
                                                       (suit-nums 2)
-                                                      (game-state "pass-direction"))
+                                                      (game-state "pass-direction")
+                                                      (some #{36} ((game-state "player-cards") player)))
                                special-card-weights (special-card-weights keep-queen)
                                all-card-weights (all-card-weights keep-queen)
                                weights (pass-weights shoot-moon

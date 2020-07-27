@@ -72,16 +72,18 @@
            ;reason why they might retain it. 2=certainty (I have it or I passed
            ;it), 0=missed opportunity to play it (probably doesn't have it)
            "could-have-36"
-           (keep-indexed (fn [player queen-holders]
-                           (let [from-to (filter #(= player (first %))
-                                                 (keys (game-state "passed")))]
-                             (if (filter #{36} ((game-state "passed") (first from-to)))
-                               (update [0 0 0 0 0] (second from-to) (constantly 2))
+           (vec (keep-indexed (fn [player queen-holders]
+                           (let [from-to (first (filter #(= player (first %))
+                                                 (keys (game-state "passed"))))]
+                             (if (some #{36} ((game-state "passed") from-to))
+                               (update queen-holders (second from-to) (constantly 2))
                                (if (= player ((game-state "card-players") 36))
-                                 (update [0 0 0 0 0] player (constantly 2))
+                                 (update queen-holders player (constantly 2))
                                  queen-holders))))
-                         (vec (take 5 (repeat [0 1 1 1 1]))))
+                         (vec (take 5 (repeat [0 1 1 1 1])))))
            "suits-known" (mapv #(mapv + % (player-suits 0)) player-suits)})))
+
+((first-round-init (pass (start-game))) "could-have-36")
 
 (defn subsequent-choice
   "Returns best card to play when not leading choice"
@@ -181,7 +183,7 @@
 
 
 
-(defn -main
+#_(defn -main
   [& args]
   (let [name (if (empty? args)
                (do (println "What is your name?") (read-line))
