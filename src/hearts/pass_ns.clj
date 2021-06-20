@@ -113,34 +113,38 @@
          hand)))
 
 (defn pass3 [weights new-game-state player dest shoot-moon]
-  (loop [top3 (take 3 (sort #(> (first %) (first %2))
-                            weights)) ;[weight card]
-         new-game-state (update new-game-state
-                                "passed"
-                                (fn [passed]
-                                  (conj passed {[player dest] '()})))]
-    (if (empty? top3) new-game-state
-      (recur (rest top3)
-             (let [card (second (first top3))
-                   new-game-state (update new-game-state
-                                          "shoot-moon"
-                                          (fn [shooters]
-                                            (update shooters
-                                                    player
-                                                    (constantly shoot-moon))))
-                   new-game-state (update new-game-state
-                                          "passed"
-                                          (fn [passed]
-                                            (update passed
-                                                    [player dest]
-                                                    #(cons card %))))]
-               (move-card card player dest new-game-state))))))
+  (let [new-game-state (update new-game-state
+                               "passer->passee"
+                               #(conj % {player dest}))
+        new-game-state (update new-game-state
+                               "passee->passer"
+                               #(conj % {dest player}))
+        new-game-state (update new-game-state
+                               "passer->cards"
+                               #(conj % {player '()}))]
+    (loop [top3 (take 3 (sort #(> (first %) (first %2))
+                              weights)) ;[weight card]
+           new-game-state new-game-state]
+      (if (empty? top3) new-game-state
+          (recur (rest top3)
+                 (let [card (second (first top3))
+                       new-game-state (update new-game-state
+                                              "shoot-moon"
+                                              (fn [shooters]
+                                                (update shooters
+                                                        player
+                                                        (constantly shoot-moon))))
+                       new-game-state (update new-game-state
+                                              "passer->cards"
+                                              (fn [passed]
+                                                (update passed player #(cons card %))))]
+                   (move-card card player dest new-game-state)))))))
 
 ;player determines if shoot moon before passing, not after
 (defn pass [game-state]
   (-> (if (= (game-state "pass-direction") 0)
         game-state
-        (let [n-players (count (game-state "player-cards"))]
+        (let [n-players (count (game-state "player->card-set"))]
           (loop [player (- n-players 1)
                  new-game-state game-state]
             (if (< player 1)
@@ -151,17 +155,18 @@
                                               n-players)]
                        (if (= ((game-state "human") player) 1)
                          (human-select-pass player)
-                         (let [hand (sort ((game-state "player-cards") player))
+                         (let [hand (sort ((game-state "player->card-set") player))
                                suit-nums (reduce #(update %1 (quot %2 13) inc)
                                                  [0 0 0 0]
                                                  hand) ;num cards in each suit
                                ; num cards not in each suit
                                suit-not-nums (mapv #(- 14 %) suit-nums)
-                               score (first (game-state "points-history"))
+                               score (first (game-state "turn-depth->(player->cumulative-points)"))
                                shoot-moon (shoot-moon hand)
                                keep-queen (keep-queen player score
                                                       (suit-nums 2)
                                                       (game-state "pass-direction"))
+                               ;weights could also be determined with ML
                                special-card-weights (special-card-weights keep-queen)
                                all-card-weights (all-card-weights keep-queen)
                                weights (pass-weights shoot-moon

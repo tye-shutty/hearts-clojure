@@ -2,7 +2,7 @@
   (:require [hearts.common-helpers :refer [card->points commonly-high]]))
 
 
-#_(defn not-risky∵unplayed
+(defn not-risky∵unplayed
   "NOT USEFUL
   makes low cards in suits that have been played/dealt more valuable
   4 known cards=higher better, 5 known cards, lower=better
@@ -39,13 +39,13 @@
 
 (defn safe-from-broken?
   "player yet to play not broken this suit before"
-  [round-card-history curr-suit-players-broken]
+  [round-card-history curr-suit->player->broken]
   (not (some false? (map (fn [player-past has-broken]
                            (or (not= 1 has-broken)
                                 (< -1 player-past)))
                          round-card-history
                          ;;who has broken current suit
-                         curr-suit-players-broken))))
+                         curr-suit->player->broken))))
 
 (defn early-safe?
   "determine if in safe phase of game (before turn 5, less than 5 cards of this
@@ -99,14 +99,14 @@
         last? (< (count (filter #{-1} round-card-history)) 2)
 
         safe-from-36? (safe-from-36? round-card-history
-                                     ((game-state "could-have-36") cp)
+                                     ((game-state "player->player->could-have-36") cp)
                                      cp)
         probably-safe-from-36?
         (probably-safe-from-36? round-card-history
-                                ((game-state "could-have-36") cp))
+                                ((game-state "player->player->could-have-36") cp))
         safe-from-broken?
         (safe-from-broken? round-card-history
-                           ((game-state "suit-players-broken") suit))
+                           ((game-state "suit->player->broken") suit))
         ;;player yet to play thrown this suit before (only of subtle use)
         #_safe-from-thrown?
         early-safe? (early-safe? (count (game-state "card-history"))
@@ -115,17 +115,17 @@
         ;;consider winning hand anyway:
         win-avoid-end? (win-avoid-end? (first (game-state "winning"))
                                        round-card-history
-                                       (first (game-state "points-history")))
+                                       (first (game-state "turn-depth->(player->cumulative-points)")))
         ;;if safe, consider winning if the following checks pass:
         ;in future, consider if that isolated high card has been broken
         ;(usually already dealt with by early-safe?)
-        isolated-high? (isolated-high? ((game-state "player-cards") cp)
+        isolated-high? (isolated-high? ((game-state "player->card-set") cp)
                                        suit early-safe?
-                                       (game-state "player-suits-card-count"))
+                                       (game-state "player->suit->count"))
         shoot-moon? (some #{true} (game-state "shoot-moon"))
         ;in future, consider points relative to end of game
-        losing? (> (- ((first (game-state "points-history")) cp) 15)
-                   (apply min (first (game-state "points-history"))))
+        losing? (> (- ((first (game-state "turn-depth->(player->cumulative-points)")) cp) 15)
+                   (apply min (first (game-state "turn-depth->(player->cumulative-points)"))))
         want-win?
         (if (or win-avoid-end?
                 shoot-moon?
@@ -139,7 +139,7 @@
           true
           false)]
     ;in future consider barely winning in some circumstances
-    (update (game-state "player-cards") cp
+    (update (game-state "player->card-set") cp
             (fn [hand] (map (fn [card] (if (= suit (quot card 13))
                                          (if (or want-win?
                                                  (< card (second (game-state "winning"))))

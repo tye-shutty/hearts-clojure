@@ -4,12 +4,12 @@
   #_(prn "from" from "to" to "card" card)
   (when (= from to) (throw (Exception. "a player is passing to itself")))
   (conj game-state
-        {"player-cards" (let [z (update (game-state "player-cards") from
+        {"player->card-set" (let [z (update (game-state "player->card-set") from
                                         (fn [f] (if (contains? f card)
                                                   (disj f card)
                                                   (throw (Exception. (str "card not found: " card))))))]
                           (update z to conj card))}
-        {"card-players" (update (game-state "card-players") card (constantly to))}))
+        {"card->player" (update (game-state "card->player") card (constantly to))}))
 
 (defn card->points [card]
   (cond
